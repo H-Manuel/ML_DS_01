@@ -2,49 +2,67 @@ import pandas as pd
 import os
 import re
 
-#%%
-# CSV-Datei einlesen
-file_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../data/raw/holiday_list.csv'))
+#%% 
+# 1. Roh‑CSV einlesen
+file_path = os.path.abspath(os.path.join(
+    os.path.dirname(__file__),
+    '../data/raw/holiday_list.csv'
+))
 df = pd.read_csv(file_path)
+
 # Da die erste Spalte keinen Header hat, benennen wir sie in "holiday" um
 df = df.rename(columns={df.columns[0]: "holiday"})
-print(df)
-#%%
-# DataFrame "schmelzen": Spalten für die Jahre in Zeilen transformieren
-df_melted = df.melt(id_vars=["holiday"], var_name="year", value_name="date_str")
-print(df_melted)
-#%%
-# Funktion zum Parsen des Datumsstrings
+
+#%% 
+# 2. DataFrame "schmelzen": Jahre-Spalten in Zeilen transformieren
+df_melted = df.melt(
+    id_vars=["holiday"],
+    var_name="year",
+    value_name="date_str"
+)
+
+#%% 
+# 3. Funktion zum Parsen der unterschiedlichen Datumsformate
 def parse_date(row):
     date_str = row['date_str']
     year = int(row['year'])
     if pd.isna(date_str) or date_str.strip() == "":
         return pd.NaT
-    # Den Wochentag entfernen: Der String wird an Kommata getrennt und der erste Teil (Wochentag) wird entfernt
+    
+    # Wochentag entfernen (falls vorhanden)
     parts = date_str.split(',')
     if len(parts) > 1:
-        # Alle Teile nach dem Wochentag zusammenfügen
-        date_without_weekday = ','.join(parts[1:]).strip()
+        date_clean = ','.join(parts[1:]).strip()
     else:
-        date_without_weekday = date_str.strip()
-    # Falls der Datumsstring noch keine Jahreszahl enthält, wird das Jahr aus der "year"-Spalte angehängt
-    if not re.search(r'\b\d{4}\b', date_without_weekday):
-        date_without_weekday = f"{date_without_weekday} {year}"
-    # Versuchen, den String in ein Datetime-Objekt zu konvertieren
-    dt = pd.to_datetime(date_without_weekday, errors='coerce')
-    return dt
+        date_clean = date_str.strip()
 
-# Datum parsen und in einer neuen Spalte speichern
+    # Jahr anhängen, falls nicht enthalten
+    if not re.search(r'\b\d{4}\b', date_clean):
+        date_clean = f"{date_clean} {year}"
+
+    # In datetime umwandeln (ungültige Werte → NaT)
+    return pd.to_datetime(date_clean, errors='coerce')
+
+# Datum parsen
 df_melted['date'] = df_melted.apply(parse_date, axis=1)
 
-# Sortieren nach Datum und unnötige Spalte entfernen
-df_melted = df_melted.sort_values(by=["date"]).drop(columns=["date_str"])
-# Spaltenreihenfolge anpassen
-df_melted = df_melted[["date", "year", "holiday"]]
+#%% 
+# 4. Alle Zeilen mit fehlendem Datum entfernen
+df_clean = df_melted.dropna(subset=['date'])
 
-# Ergebnis ausgeben
-print(df_melted)
-#%%
-# Ergebnis in CSV-Datei speichern
-output_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../data/processed/holiday_list.csv'))
-df_melted.to_csv(output_path, index=False)
+# 5. Sortieren und Spaltenauswahl
+df_clean = (
+    df_clean
+    .sort_values(by='date')
+    .loc[:, ['date', 'year', 'holiday']]
+)
+
+#%% 
+# 6. In neue CSV schreiben
+output_path = os.path.abspath(os.path.join(
+    os.path.dirname(__file__),
+    '../data/processed/holiday_list.csv'
+))
+df_clean.to_csv(output_path, index=False)
+
+print(f"{len(df_clean)} Feiertage geschrieben, alle leeren Datumswerte entfernt.")
